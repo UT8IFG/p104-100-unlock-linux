@@ -1,0 +1,58 @@
+[Unit]
+Description=P104-100 PCIe Gen2 x4 daemon
+# The GPU and the NVIDIA driver must be present before the daemon starts.
+After=multi-user.target nvidia-persistenced.service
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment=PYTHONUNBUFFERED=1
+
+# Current daemon: 20 ms hold loop with fast 0x8C040 recovery.
+# x16 is opt-in and off by default; --x16 only announces the x16 width
+# on the bus.  --stagger only affects --once, not the watchdog.
+ExecStart=/usr/bin/python3 /usr/local/p104-100/p104-100.py --interval 0.02 --log-level INFO
+
+# Continuous service: restart if the process crashes or exits unexpectedly.
+Restart=always
+RestartPreventExitStatus=3
+RestartSec=10
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+# ---------------------------------------------------------------------------
+# Hardening
+# ---------------------------------------------------------------------------
+# Raw PCI access needs to write to /sys/bus/pci/devices/*/config and to mmap
+# /sys/bus/pci/devices/*/resource0, therefore /sys must stay writable.
+# Do NOT enable ProtectKernelTunables=yes: it remounts /sys read-only and
+# would break PCI configuration-space writes.
+ProtectKernelTunables=no
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectSystem=strict
+ReadWritePaths=/run/lock
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+UMask=0077
+
+# Keep exactly the capabilities required for raw PCI config/BAR access.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+
+# Journald captures stdout/stderr with timestamps.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=p104-100
+
+[Install]
+WantedBy=multi-user.target
